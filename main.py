@@ -1,3 +1,6 @@
+import os
+os.environ["INSIGHTFACE_HOME"] = "/data/.insightface"
+
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,7 +12,6 @@ import cv2
 import psycopg2
 from pgvector.psycopg2 import register_vector
 import requests
-import os
 from dotenv import load_dotenv
 import boto3
 from io import BytesIO
@@ -50,7 +52,7 @@ app.add_middleware(
 print("⏳ Loading InsightFace model...")
 face_app = FaceAnalysis(
     name="buffalo_l",
-    providers=["CPUExecutionProvider"]  # hapus CUDA
+    providers=["CPUExecutionProvider"]
 )
 face_app.prepare(ctx_id=-1, det_size=(640, 640))
 print("✅ InsightFace model siap!")
