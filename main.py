@@ -22,13 +22,15 @@ load_dotenv()
 # ─────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────
-API_KEY            = os.getenv("AI_API_KEY")
-DATABASE_URL       = os.getenv("DATABASE_URL")
-THRESHOLD          = float(os.getenv("SIMILARITY_THRESHOLD", 0.65))
-R2_ACCESS_KEY      = os.getenv("R2_ACCESS_KEY_ID")
-R2_SECRET_KEY      = os.getenv("R2_SECRET_ACCESS_KEY")
-R2_ENDPOINT        = os.getenv("R2_ENDPOINT_URL")
-R2_BUCKET          = os.getenv("R2_BUCKET_NAME")
+API_KEY = os.getenv("AI_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
+THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", 0.65))
+R2_ACCESS_KEY = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_ENDPOINT = os.getenv("R2_ENDPOINT_URL")
+R2_BUCKET = os.getenv("R2_BUCKET_NAME")
+
+print("INSIGHTFACE_HOME =", os.getenv("INSIGHTFACE_HOME"))
 
 # ─────────────────────────────────────────
 # INIT FASTAPI
@@ -49,9 +51,9 @@ app.add_middleware(
 # ─────────────────────────────────────────
 # INIT INSIGHTFACE
 # ─────────────────────────────────────────
-print("⏳ Loading InsightFace model...")
 face_app = FaceAnalysis(
     name="buffalo_l",
+    root="/data/.insightface",
     providers=["CPUExecutionProvider"]
 )
 face_app.prepare(ctx_id=-1, det_size=(640, 640))
@@ -67,6 +69,7 @@ def get_db():
         yield conn
     finally:
         conn.close()
+
 
 def init_db():
     conn = psycopg2.connect(DATABASE_URL)
@@ -135,6 +138,7 @@ def load_image_from_url(url: str) -> np.ndarray:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Gagal load gambar: {str(e)}")
 
+
 def load_image_from_bytes(image_bytes: bytes) -> np.ndarray:
     """Konversi bytes gambar ke numpy array."""
     img_array = np.frombuffer(image_bytes, np.uint8)
@@ -143,21 +147,23 @@ def load_image_from_bytes(image_bytes: bytes) -> np.ndarray:
         raise HTTPException(status_code=400, detail="Gagal decode gambar")
     return img
 
+
 def get_best_embedding(img: np.ndarray) -> Optional[np.ndarray]:
     """Ambil embedding wajah terbesar/terdepan dari gambar."""
     faces = face_app.get(img)
     if not faces:
         return None
-    # Ambil wajah dengan bounding box terbesar (paling depan)
     best_face = max(faces, key=lambda f: (
         (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1])
     ))
     return best_face.embedding
 
+
 def get_all_embeddings(img: np.ndarray) -> List[np.ndarray]:
     """Ambil semua embedding wajah dalam gambar."""
     faces = face_app.get(img)
     return [face.embedding for face in faces]
+
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """Hitung cosine similarity antara dua embedding."""
@@ -170,14 +176,17 @@ class EnrollRequest(BaseModel):
     runner_id: int
     selfie_url: str  # URL dari R2
 
+
 class EnrollResponse(BaseModel):
     status: str
     runner_id: int
     message: str
 
+
 class EmbedPhotoRequest(BaseModel):
     photo_id: int
     photo_url: str  # URL dari R2
+
 
 class EmbedPhotoResponse(BaseModel):
     status: str
@@ -185,13 +194,16 @@ class EmbedPhotoResponse(BaseModel):
     faces_found: int
     message: str
 
+
 class SearchRequest(BaseModel):
     runner_id: int
     photo_ids: List[int]
 
+
 class PhotoMatch(BaseModel):
     photo_id: int
     score: float
+
 
 class SearchResponse(BaseModel):
     status: str
@@ -199,6 +211,7 @@ class SearchResponse(BaseModel):
     matched: List[PhotoMatch]
     total_scanned: int
     total_matched: int
+
 
 class HealthResponse(BaseModel):
     status: str
@@ -209,10 +222,10 @@ class HealthResponse(BaseModel):
 # ─────────────────────────────────────────
 # ENDPOINTS
 # ─────────────────────────────────────────
-
 @app.on_event("startup")
 async def startup_event():
     init_db()
+
 
 @app.get("/", response_model=HealthResponse)
 def health_check():
@@ -224,6 +237,7 @@ def health_check():
         version="1.0.0"
     )
 
+
 @app.post("/enroll", response_model=EnrollResponse)
 def enroll_runner(
     request: EnrollRequest,
@@ -234,10 +248,8 @@ def enroll_runner(
     Daftarkan wajah pelari dari selfie.
     Dipanggil saat pelari register atau update selfie.
     """
-    # Load gambar dari R2
     img = load_image_from_url(request.selfie_url)
 
-    # Ambil embedding wajah terbaik
     embedding = get_best_embedding(img)
     if embedding is None:
         raise HTTPException(
@@ -245,7 +257,6 @@ def enroll_runner(
             detail="Tidak ada wajah terdeteksi di selfie. Pastikan wajah terlihat jelas."
         )
 
-    # Simpan atau update embedding di DB
     cur = db.cursor()
     cur.execute("""
         INSERT INTO runner_embeddings (runner_id, embedding, updated_at)
@@ -273,10 +284,8 @@ def embed_photo(
     Ekstrak & simpan embedding semua wajah dalam foto event.
     Dipanggil via queue saat FG upload foto.
     """
-    # Load gambar dari R2
     img = load_image_from_url(request.photo_url)
 
-    # Ambil semua embedding wajah
     embeddings = get_all_embeddings(img)
     faces_found = len(embeddings)
 
@@ -288,10 +297,8 @@ def embed_photo(
             message="Tidak ada wajah terdeteksi dalam foto"
         )
 
-    # Simpan semua embedding
     cur = db.cursor()
 
-    # Hapus embedding lama kalau ada (re-process)
     cur.execute("DELETE FROM photo_embeddings WHERE photo_id = %s", (request.photo_id,))
 
     for idx, embedding in enumerate(embeddings):
@@ -323,7 +330,6 @@ def search_runner_photos(
     """
     cur = db.cursor()
 
-    # Ambil embedding pelari
     cur.execute(
         "SELECT embedding FROM runner_embeddings WHERE runner_id = %s",
         (request.runner_id,)
@@ -339,7 +345,6 @@ def search_runner_photos(
     matched = []
 
     for photo_id in request.photo_ids:
-        # Ambil semua embedding wajah dari foto ini
         cur.execute(
             "SELECT embedding FROM photo_embeddings WHERE photo_id = %s",
             (photo_id,)
@@ -349,7 +354,6 @@ def search_runner_photos(
         if not rows:
             continue
 
-        # Cek semua wajah, ambil score tertinggi
         best_score = 0.0
         for row in rows:
             face_embedding = np.array(row[0])
@@ -365,7 +369,6 @@ def search_runner_photos(
 
     cur.close()
 
-    # Sort by score tertinggi
     matched.sort(key=lambda x: x.score, reverse=True)
 
     return SearchResponse(
