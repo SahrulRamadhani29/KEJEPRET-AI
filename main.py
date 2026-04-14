@@ -50,9 +50,9 @@ app.add_middleware(
 print("⏳ Loading InsightFace model...")
 face_app = FaceAnalysis(
     name="buffalo_l",
-    providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+    providers=["CPUExecutionProvider"]  # hapus CUDA
 )
-face_app.prepare(ctx_id=0, det_size=(640, 640))
+face_app.prepare(ctx_id=-1, det_size=(640, 640))
 print("✅ InsightFace model siap!")
 
 # ─────────────────────────────────────────
