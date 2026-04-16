@@ -10,7 +10,8 @@ WORKDIR /app
 # Switch kembali ke root HANYA untuk install apt-get
 USER root
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    libgl1 \
+    libglx-mesa0 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
