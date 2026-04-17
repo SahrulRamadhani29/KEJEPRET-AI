@@ -24,7 +24,7 @@ load_dotenv()
 # ─────────────────────────────────────────
 API_KEY        = os.getenv("AI_API_KEY")
 DATABASE_URL   = os.getenv("DATABASE_URL")
-THRESHOLD      = float(os.getenv("SIMILARITY_THRESHOLD", 0.65))
+THRESHOLD      = float(os.getenv("SIMILARITY_THRESHOLD", 65))  # ← default 65 (skala 0-100)
 R2_ACCESS_KEY  = os.getenv("R2_ACCESS_KEY_ID")
 R2_SECRET_KEY  = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_ENDPOINT    = os.getenv("R2_ENDPOINT_URL")
@@ -158,7 +158,10 @@ def get_all_embeddings(img: np.ndarray) -> List[np.ndarray]:
     return [face.embedding for face in faces]
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+    # ← FIX: normalisasi dulu seperti simulasi, bukan langsung dot/norm
+    norm_a = a / np.linalg.norm(a)
+    norm_b = b / np.linalg.norm(b)
+    return float(np.dot(norm_a, norm_b))  # hasil: -1 ~ 1
 
 # ─────────────────────────────────────────
 # PYDANTIC MODELS
@@ -303,11 +306,14 @@ def search_runner_photos(
         best_score = 0.0
         for row in rows:
             face_embedding = np.array(row[0])
-            score = cosine_similarity(runner_embedding, face_embedding)
-            if score > best_score:
-                best_score = score
+            raw_score = cosine_similarity(runner_embedding, face_embedding)
+            # ← FIX: konversi -1~1 ke 0-100% seperti simulasi
+            persen = (raw_score + 1) / 2 * 100
+            if persen > best_score:
+                best_score = persen
+        # ← FIX: bandingkan persen (0-100) dengan THRESHOLD (65)
         if best_score >= THRESHOLD:
-            matched.append(PhotoMatch(photo_id=photo_id, score=round(best_score * 100, 1)))
+            matched.append(PhotoMatch(photo_id=photo_id, score=round(best_score, 1)))
     cur.close()
     matched.sort(key=lambda x: x.score, reverse=True)
     return SearchResponse(
